@@ -1,7 +1,7 @@
 .PHONY: clean all
 
 CFLAGS:=--std=c99
-CUDAFLAGS:=--compiler-bindir g++-4.8
+CUDAFLAGS:=--compiler-bindir g++-4.8 -arch=sm_20
 
 cpu_version: lenna.o lodepng.c.o
 	$(CC) -o $@ $^
@@ -19,6 +19,8 @@ lodepng.cpp.o: lodepng.cpp
 	$(CXX) -c $< -o $@
 
 all: cpu_version gpu_version
+
+cuda: gpu_version
 
 clean: 
 	rm -f *.o gpu_version cpu_version lenna512x512_orig.png
