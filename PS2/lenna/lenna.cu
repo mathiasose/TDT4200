@@ -8,8 +8,8 @@
 __global__
 void kernel(subpixel_t* image) {
     /*
-        Each thread works on (3 values == 1 pixel)
-    */
+       Each thread works on (3 values == 1 pixel)
+     */
     unsigned int x = (blockIdx.x * blockDim.x + threadIdx.x);
     unsigned int y = (blockIdx.y * blockDim.y + threadIdx.y);
     unsigned int w = gridDim.x * blockDim.x;
@@ -21,25 +21,19 @@ void kernel(subpixel_t* image) {
 }
 
 int main( int argc, char ** argv){
-
     size_t pngsize;
     subpixel_t *png;
     const char * filename = "lenna512x512_inv.png";
 
-    /* Read in the image */
     lodepng_load_file(&png, &pngsize, filename);
 
-    /* Decode it into a RGB 8-bit per channel vector */
     subpixel_t *image;
     unsigned int width, height;
     unsigned int error = lodepng_decode24(&image, &width, &height, png, pngsize);
 
-    /* Check if read and decode of .png went well */
-    if(error != 0){
+    if (error != 0){
         std::cout << "error " << error << ": " << lodepng_error_text(error) << std::endl;
     }
-
-    // Do work
 
     unsigned int size = sizeof(subpixel_t) * width * height * VALUES_PER_PIXEL;
 
@@ -49,11 +43,29 @@ int main( int argc, char ** argv){
     subpixel_t* device_a;
     cudaMalloc ((void **)&device_a, size);
 
-    cudaMemcpy(device_a, image, size, cudaMemcpyHostToDevice);
-    kernel<<<gridDim, blockDim>>>(device_a);
-    cudaMemcpy(image, device_a, size, cudaMemcpyDeviceToHost);
+    float dt_0_1, dt_2_3;
+    cudaEvent_t t0, t1, t2, t3;
+    cudaEventCreate(&t0);
+    cudaEventCreate(&t1);
+    cudaEventCreate(&t2);
+    cudaEventCreate(&t3);
 
-    /* Save the result to a new .png file */
+    cudaEventRecord(t0, 0); 
+    cudaMemcpy(device_a, image, size, cudaMemcpyHostToDevice);
+    cudaEventRecord(t1, 0); 
+    cudaEventSynchronize(t1);
+    cudaEventElapsedTime(&dt_0_1, t0, t1);
+
+    kernel<<<gridDim, blockDim>>>(device_a);
+
+    cudaEventRecord(t2, 0); 
+    cudaMemcpy(image, device_a, size, cudaMemcpyDeviceToHost);
+    cudaEventRecord(t3, 0); 
+    cudaEventSynchronize(t3);
+    cudaEventElapsedTime(&dt_2_3, t2, t3);
+
+    printf("total transfer time: %f ms\n", dt_0_1 + dt_2_3);
+
     lodepng_encode24_file("lenna512x512_orig.png", image, width, height);
 
     free(image);
