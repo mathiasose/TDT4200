@@ -23,13 +23,13 @@ for lo, hi in RANGES:
         for x in xrange(20):
             new_hi = min(hi, lo + n * (x + 1))
             print(lo, new_hi)
-            
+
             cmd = CMD.format(np=np, lo=lo, hi=new_hi)
-            
+
             start = time.time()
             system_call(cmd)
             end = time.time()
-            
+
             results.append({
                 'time': end - start,
                 'whole_range': (lo, hi),
