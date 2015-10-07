@@ -1,71 +1,68 @@
 \section*{Part 1}
 \subsection*{1a}
-\begin{table}[h]
-    \begin{tabular}{ll|ll}
-        ~    & ~        & \multicolumn{2}{c}{Instruction} \\
-        ~    & ~        & Single      & Multiple \\\hline
-        \multirow{2}{*}{Data}         & Single   & SISD        & MISD     \\
-        ~    & Multiple & SIMD        & MIMD     \\
-    \end{tabular}
-\end{table}
-
-With MPI a single program (compiled source) is instantiated as multiple processes with different parameters.
-Through MPI the processes send their computed results to some designated "master" process which consumes them into a single result for the entire program.
-Therefore MPI fits under the MIMD category: there are multiple concurrent instruction streams, each working on their own data set.
+Maxwell is a GPU architecture, with homogenous cores with threaded execution.
+\\
+big.LITTLE is a CPU architecture, with heterogenous cores with threaded execution.
+\\
+Vilje has a clustered supercomputer architecture, with homogenous cored with threaded execution and NUMA.
+\\
+A typical CPU is homogenous with threaded execution.
 
 \subsection*{1b}
-If two processes reside on the same node, MPI can facilitate shared memory so that the processes can pass messages through it.
+SIMT is a subcategory of SIMD.
+A scheduling algorithm groups threads with the same instructions together is warps,
+and the threads in a warp are executed together concurrently.
+
+Maxwell implements SIMT. Nvidia provides compilers for various languages that link in their libraries automatically to make the programs SIMT-runnable.
 
 \subsection*{1c}
-If two processes that need to communicate are not located on the same node,
-they can not share memory, and must communcate over a network instead.
+i) SIMD/SIMT. The kernel of the program is executed as multiple threads on multiple data.\\
+ii) MIMD. Heterogenous computing does not lend itself to neither SI nor SD easily.\\
+iii) MIMD. Lots of different programs are simultaneously running, each with their own datasets.\\
+iv) MIMD. In for example a modern PC, lots of different programs with their own data are running at the same time. A single core context switches between different programs frequently.
 
 \subsection*{2a}
-\subsubsection*{i}
-The process with rank 0 has two jobs,
-both computing its own slice of the sum formula,
-then receving the results from the other processes and adding those up too.
+A thread is the execution of a set of instructions on some data.
+Multiple threads make up a block.
+In each block, threads are executed in paralell.
+Blocks are organized into a grid.
+Each block in the grid is executed by a core, not synced.
+If there are more blocks than cores they are queued.
 
-Since all the processes are relatively equal they should all be done computing their part at about the same time.
-At this point, process 0 must one by one receive the results in sequence.
-The other processes this have to wait in a bottleneck for their turn to pass their message.
-The process dependency tree would then look like a tree with one root, M mid-level nodes and N leaf nodes.
+\subsection*{2b}
+\begin{align*}
+    t_{CPU} &= 3500*n*\log_2{n}\\
+    t_{GPU} &= 35*n*\log_2{n} + \frac{7n}{r}\\
+\end{align*}
+\begin{align*}
+    \text{let~} t_{CPU} &= t_{GPU} \text{, solve for n} \\
+    n &= 2^{\frac{1}{495r}}
+\end{align*}
 
-\subsubsection*{ii}
-Process 0's computing part could be done by an extra process, making process 0 ready to receive sooner.
-It would also be possible to parallelize the summing of contributions.
-So for $N$ processes there would be some number $M$ of processes that each would sum $N / M$ contributions, and $1$ process that would finally sum the $M$ sums.
+\subsection*{2c}
+Kernel 2 is faster.
+Kernel 1 is "throwing" away a lot of paralellism by not using all the threads spawned for anything productive.
 
-\section*{Part 2}
+\subsection*{2d}
+i) A grouping of 32 threads within the same block that execute at the same time.
+The better warps are utilized (by using all 32 slots and by running as many concurrent warps as possible), the better the performance will be. \\
+ii) The proportion of active warps out of the maximum possible active warps.
+Resource limits or conflicts cause occupancy to be reduced.\\
+iii) Placing data that needs to be accessed together near each other in physical memory to reduce the number of accesses needed.\\
+iv) Sections of global memory where data needed by threads that can not fit in registers can be stored.
+Performance will be better if local memory isn ot used and data can be fitted into registers instead.\\
+v) Memory that can be used by all the threads.
+Conflict-prone if the threads need to write to it.
+
+\section*{Part 1}
 \subsection*{1c}
-\subsubsection*{i}
+\begin{verbatim}
+$ time ./gpu_version
+transfer time: 0.355072 ms
 
-\subsubsection*{ii}
-alle:   init + rank + size
-0:      P-1 * receive
-~0:     send
+real    0m0.216s
+user    0m0.090s
+sys     0m0.097s
+\end{verbatim}
 
-3P + P-1 + 1 = 4P
-
-\subsubsection*{iii}
-
-\subsubsection*{iv}
-
-\subsubsection*{v}
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.32\textwidth]{10^2.png}
-    \includegraphics[width=0.32\textwidth]{10^6.png}
-    \includegraphics[width=0.32\textwidth]{10^9.png}
-    \caption*{}
-\end{figure}
-We can see that the two smaller calculations are trivial for a single process,
-and parallelizing it introduces overhead which takes more time.
-For the largest calculation though, we can see that using parallel processes does improve the performance significantly.
-
-%\begin{verbatim}
-%    1       2       4       8
-%^2  0.032   1.032   1.044   1.057
-%^6  0.053   1.052   1.046   1.065
-%^9  26.574  10.886  6.355   5.295
-%\end{verbatim}
+The transfer time is $0.001643852\%$ of the running time.
