@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
         free(inputLine);
         lineLength = 0;
         inputLine = NULL;
-        ssize_t readChars = getline(&inputLine, &lineLength, stdin);
+        getline(&inputLine, &lineLength, stdin);
 
         // If there exists at least two matches (2x %d)...
         if (sscanf(inputLine, "%d %d %d", &current_start, &current_stop, &tot_threads) >= 2){
@@ -77,7 +77,11 @@ int main(int argc, char **argv) {
             continue;
         }
 
+#ifdef HAVE_OPENMP
+        omp_set_num_threads(numThreads[run]);
+#endif
         int sum = 0;
+#pragma omp parallel for reduction(+:sum)
         for (int c = start[run]; c < stop[run]; c++) {
             for (int b = 4; b < c; b++) {
                 int gcd_bc = gcd(b, c);
@@ -89,6 +93,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
+
         printf("%d\n", sum);
     }
 
