@@ -8,32 +8,41 @@ MPICC	= mpicc
 COPT    = -g
 CFLAGS  = $(COPT) -Wall -Wno-unused-result -Wno-unknown-pragmas -std=c99 -O2
 LDFLAGS = -fopenmp
-LDLIBS  = -lm
 
 OPENMPFLAGS:=-DHAVE_OPENMP -fopenmp
 MPIFLAGS:=-DHAVE_MPI
 MPI_N:=5
 
-serial: $(PROGRAM).c
-	$(CC) $^ -o $@ $(LDLIBS) $(CFLAGS)
-	./$@ < $(INPUT)
+all: runserial runomp runmpi runmpiomp
 
-openmp: $(PROGRAM).c
-	$(CC) $(OPENMPFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-	./$@ < $(INPUT)
+serial: $(PROGRAM).c
+	$(CC) $^ -o $@ $(CFLAGS)
+
+runserial: serial
+	./$^ < $(INPUT)
+
+omp: $(PROGRAM).c
+	$(CC) $(OPENMPFLAGS) $(CFLAGS) $^ -o $@
+
+runomp: omp
+	./$^ < $(INPUT)
 
 mpi: $(PROGRAM).c
-	$(MPICC) $(MPIFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-	mpirun -n 1 ./$@ < $(INPUT)
-	mpirun -n $(MPI_N) ./$@ < $(INPUT)
+	$(MPICC) $(MPIFLAGS) $(CFLAGS) $^ -o $@
 
-openmpi: $(PROGRAM).c
-	$(MPICC) $(OPENMPFLAGS) $(MPIFLAGS) $(CFLAGS) $^ -o $@ $(LDLIBS)
-	mpirun -n 1 ./$@ < $(INPUT)
-	mpirun -n $(MPI_N) ./$@ < $(INPUT)
+runmpi: mpi
+	mpirun -n 1 ./$^ < $(INPUT)
+	mpirun -n $(MPI_N) ./$^ < $(INPUT)
 
-timing: serial openmp
+mpiomp: $(PROGRAM).c
+	$(MPICC) $(OPENMPFLAGS) $(MPIFLAGS) $(CFLAGS) $^ -o $@
+
+runmpiomp: mpiomp
+	mpirun -n 1 ./$^ < $(INPUT)
+	mpirun -n $(MPI_N) ./$^ < $(INPUT)
+
+timing: serial omp
 	./timing.sh
 
 clean:
-	rm -f *.o serial openmp mpi openmpi
+	rm -f *.o serial omp mpi mpiomp

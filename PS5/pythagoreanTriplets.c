@@ -2,8 +2,6 @@
 #include <stdio.h> // for stdin
 #include <stdlib.h>
 #include <unistd.h> // for ssize_t
-#include <stdbool.h>
-#include <math.h>
 
 #ifdef HAVE_MPI
 #include <mpi.h>
@@ -15,18 +13,33 @@
 
 #define DEBUG 0
 
-int gcd(int a, int b) {
-    int t;
-    while (b != 0) {
-        t = b;
-        b = a % b;
-        a = t;
-    }
-    return a;
-}
+unsigned int gcd(unsigned int u, unsigned int v) {
+    // https://en.wikipedia.org/wiki/Binary_GCD_algorithm#Iterative_version_in_C
+    int shift;
 
-bool isPythagorean(int a, int b, int c) {
-    return pow(a, 2) + pow(b, 2) == pow(c, 2);
+    for (shift = 0; ((u | v) & 1) == 0; ++shift) {
+        u >>= 1;
+        v >>= 1;
+    }
+
+    while ((u & 1) == 0) {
+        u >>= 1;
+    }
+
+    do {
+        while ((v & 1) == 0) {
+            v >>= 1;
+        }
+
+        if (u > v) {
+            unsigned int t = v;
+            v = u;
+            u = t;
+        }
+        v = v - u;
+    } while (v != 0);
+
+    return u << shift;
 }
 
 int main(int argc, char **argv) {
@@ -51,7 +64,7 @@ int main(int argc, char **argv) {
         start = (int*) calloc(amountOfRuns, sizeof(int));
         numThreads = (int*) calloc(amountOfRuns, sizeof(int));
 
-        int tot_threads, current_start, current_stop;
+        int tot_threads = 1, current_start, current_stop;
         for (int i = 0; i < amountOfRuns; ++i){
 
             // Read in each line of input that follows after first line
@@ -61,17 +74,17 @@ int main(int argc, char **argv) {
             getline(&inputLine, &lineLength, stdin);
 
             // If there exists at least two matches (2x %d)...
-            if (sscanf(inputLine, "%d %d %d", &current_start, &current_stop, &tot_threads) >= 2){
+            int input_scan = sscanf(inputLine, "%d %d %d", &current_start, &current_stop, &tot_threads);
+            if (input_scan >= 2){
                 if(current_start < 0 || current_stop < 0){
                     current_start = 0, current_stop = 0;
                 }
                 stop[i] = current_stop;
                 start[i] = current_start;
-                numThreads[i] = tot_threads;
-
-                if (numThreads[i] <= 0) { // this also happens implicitly for some reason?
-                    numThreads[i] = 1;
+                if (start[i] % 2 == 0) {
+                    start[i]++;
                 }
+                numThreads[i] = tot_threads;
             }
         }
     }
@@ -92,11 +105,6 @@ int main(int argc, char **argv) {
     for (int run = 0; run < amountOfRuns; run++) {
         if (DEBUG) printf("%d %d %d\n", start[run], stop[run], numThreads[run]);
 
-        if (start[run] >= stop[run] && rank == 0) {
-            printf("0\n");
-            continue;
-        }
-
         int c_start = start[run];
         int c_stop = stop[run];
 
@@ -104,6 +112,9 @@ int main(int argc, char **argv) {
         int delta = (stop[run] - start[run]) / size;
         if (rank > 0) {
             c_start = start[run] + rank * delta;
+            if (c_start % 2 == 0) {
+                c_start++;
+            }
         }
         if (rank < (size - 1)) {
             c_stop = c_start + delta;
@@ -111,31 +122,37 @@ int main(int argc, char **argv) {
 #endif
 
 #ifdef HAVE_OPENMP
+        if (DEBUG) printf("run: %d\n", run);
+        if (DEBUG) printf("numThreads: %d\n", numThreads[run]);
         omp_set_num_threads(numThreads[run]);
 #endif
         int local_sum = 0;
-#pragma omp parallel for reduction(+:local_sum)
-        for (int c = c_start; c < c_stop; c++) {
-            for (int b = 4; b < c; b++) {
+#pragma omp parallel for schedule(guided) reduction(+:local_sum)
+        for (int c = c_start; c < c_stop; c+=2) {
+            for (int b = 4; b < c; b+=2) {
                 int gcd_bc = gcd(b, c);
-                for (int a = 3; a < b; a++) {
-                    int gcd_abc = gcd(a, gcd_bc);
-                    if (gcd_abc == 1 && isPythagorean(a, b, c)) {
+                if (gcd_bc != 1) {
+                    continue;
+                }
+                for(int a = 3; a < c; a+=2) {
+                    int gcd_ab = gcd(a, b);
+                    if ((a*a + b*b == c*c) && (gcd_ab == 1)) {
                         local_sum += 1;
+                        break;
                     }
                 }
             }
         }
 
-        int global_sum = 0;
 #ifdef HAVE_MPI
+        int global_sum = 0;
         MPI_Reduce(&local_sum, &global_sum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-#else
-        global_sum = local_sum;
-#endif
         if (rank == 0) {
             printf("%d\n", global_sum);
         }
+#else
+        printf("%d\n", local_sum);
+#endif
     }
 
 #ifdef HAVE_MPI
@@ -144,3 +161,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+

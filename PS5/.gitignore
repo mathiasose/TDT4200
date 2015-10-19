@@ -1,6 +1,6 @@
 *.o
 serial
-openmp
+omp
 mpi
-openmpi
+mpiomp
 
