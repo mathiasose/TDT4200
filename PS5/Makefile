@@ -7,7 +7,7 @@ CC      = gcc
 MPICC	= mpicc
 COPT    = -g
 CFLAGS  = $(COPT) -Wall -Wno-unused-result -Wno-unknown-pragmas -std=c99 -O2
-LDFLAGS = -fopenmp
+LDFLAGS = -lm
 
 OPENMPFLAGS:=-DHAVE_OPENMP -fopenmp
 MPIFLAGS:=-DHAVE_MPI

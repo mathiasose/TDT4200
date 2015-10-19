@@ -2,6 +2,7 @@
 #include <stdio.h> // for stdin
 #include <stdlib.h>
 #include <unistd.h> // for ssize_t
+#include <math.h>
 
 #ifdef HAVE_MPI
 #include <mpi.h>
@@ -108,6 +109,11 @@ int main(int argc, char **argv) {
         int c_start = start[run];
         int c_stop = stop[run];
 
+        if (rank == 0 && c_stop < c_start) {
+            printf("0\n");
+            continue;
+        }
+
 #ifdef HAVE_MPI
         int delta = (stop[run] - start[run]) / size;
         if (rank > 0) {
@@ -127,6 +133,7 @@ int main(int argc, char **argv) {
         omp_set_num_threads(numThreads[run]);
 #endif
         int local_sum = 0;
+        /*
 #pragma omp parallel for schedule(guided) reduction(+:local_sum)
         for (int c = c_start; c < c_stop; c+=2) {
             for (int b = 4; b < c; b+=2) {
@@ -140,6 +147,29 @@ int main(int argc, char **argv) {
                         local_sum += 1;
                         break;
                     }
+                }
+            }
+        }
+        */
+
+#pragma omp parallel for schedule(guided) reduction(+:local_sum)
+        for (int m = 2; m < c_stop; m++) {
+            for (int n = 1; n < m; n++) {
+                int c = m*m + n*n;
+                if (c < c_start) {
+                    continue;
+                }
+                if (c > c_stop) {
+                    break;
+                }
+                if (!((m - n) & 0b1 && gcd(m, n) == 1)) {
+                    continue;
+                }
+                int a = m*m - n*n;
+                int b = 2*m*n;
+                if (DEBUG) printf("%d^2 + %d^2 = %d^2\n", a, b, c);
+                if (c <= c_stop) {
+                    local_sum += 1;
                 }
             }
         }
