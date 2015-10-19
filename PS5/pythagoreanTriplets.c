@@ -106,24 +106,21 @@ int main(int argc, char **argv) {
     for (int run = 0; run < amountOfRuns; run++) {
         if (DEBUG) printf("%d %d %d\n", start[run], stop[run], numThreads[run]);
 
-        int c_start = start[run];
-        int c_stop = stop[run];
-
-        if (rank == 0 && c_stop < c_start) {
-            printf("0\n");
+        if (stop[run] < start[run]) {
+            if (rank == 0) {
+                printf("0\n");
+            }
             continue;
         }
 
+        int m_start = 2;
+        int m_stop = stop[run];
+
 #ifdef HAVE_MPI
-        int delta = (stop[run] - start[run]) / size;
-        if (rank > 0) {
-            c_start = start[run] + rank * delta;
-            if (c_start % 2 == 0) {
-                c_start++;
-            }
-        }
+        int delta = (stop[run] - 2) / size;
+        m_start = 2 + rank * delta;
         if (rank < (size - 1)) {
-            c_stop = c_start + delta;
+            m_stop = 2 + (rank + 1) * delta;
         }
 #endif
 
@@ -153,23 +150,26 @@ int main(int argc, char **argv) {
         */
 
 #pragma omp parallel for schedule(guided) reduction(+:local_sum)
-        for (int m = 2; m < c_stop; m++) {
+        for (int m = m_start; m < m_stop; m++) {
             for (int n = 1; n < m; n++) {
                 int c = m*m + n*n;
-                if (c < c_start) {
-                    continue;
+                if (c < start[run]) {
+                    continue; // if n can't make a valid c, try the next n
                 }
-                if (c > c_stop) {
-                    break;
+                if (c > stop[run]) {
+                    break; // if m and n makes too big c, try the next m
                 }
                 if (!((m - n) & 0b1 && gcd(m, n) == 1)) {
-                    continue;
+                    continue; // wikipedia says: primitive iff m and n are coprime and m − n is odd
                 }
-                int a = m*m - n*n;
-                int b = 2*m*n;
-                if (DEBUG) printf("%d^2 + %d^2 = %d^2\n", a, b, c);
-                if (c <= c_stop) {
+                if (c <= stop[run]) {
                     local_sum += 1;
+                }
+
+                if (DEBUG) {
+                    int a = m*m - n*n;
+                    int b = 2*m*n;
+                    printf("%d^2 + %d^2 = %d^2\n", a, b, c);
                 }
             }
         }
