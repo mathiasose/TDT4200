@@ -117,11 +117,17 @@ int main(int argc, char **argv) {
         int m_stop = stop[run];
 
 #ifdef HAVE_MPI
-        int delta = (stop[run] - 2) / size;
-        m_start = 2 + rank * delta;
-        if (rank < (size - 1)) {
-            m_stop = 2 + (rank + 1) * delta;
+        // https://math.stackexchange.com/questions/107269/
+        // The idea is that the lower ms have shorter n loops inside them
+        // than the higher ms.
+        // So the processes that do lower ms should do more ms,
+        // and vice versa.
+        m_start = 2 + stop[run]*(sqrt((size + 1) * rank)/(float)size);
+        m_stop = 2 + stop[run]*(sqrt((size + 1) * (rank + 1))/(float)size);
+        if (rank == (size - 1)) {
+            m_stop = stop[run];
         }
+        printf("%d: %d --> %d\n", rank, m_start, m_stop);
 #endif
 
 #ifdef HAVE_OPENMP
@@ -130,25 +136,6 @@ int main(int argc, char **argv) {
         omp_set_num_threads(numThreads[run]);
 #endif
         int local_sum = 0;
-        /*
-#pragma omp parallel for schedule(guided) reduction(+:local_sum)
-        for (int c = c_start; c < c_stop; c+=2) {
-            for (int b = 4; b < c; b+=2) {
-                int gcd_bc = gcd(b, c);
-                if (gcd_bc != 1) {
-                    continue;
-                }
-                for(int a = 3; a < c; a+=2) {
-                    int gcd_ab = gcd(a, b);
-                    if ((a*a + b*b == c*c) && (gcd_ab == 1)) {
-                        local_sum += 1;
-                        break;
-                    }
-                }
-            }
-        }
-        */
-
 #pragma omp parallel for schedule(guided) reduction(+:local_sum)
         for (int m = m_start; m < m_stop; m++) {
             for (int n = 1; n < m; n++) {
@@ -159,7 +146,7 @@ int main(int argc, char **argv) {
                 if (c > stop[run]) {
                     break; // if m and n makes too big c, try the next m
                 }
-                if (!((m - n) & 0b1 && gcd(m, n) == 1)) {
+                if (!((m - n) & 0b1) || gcd(m, n) != 1) {
                     continue; // wikipedia says: primitive iff m and n are coprime and m − n is odd
                 }
                 if (c <= stop[run]) {

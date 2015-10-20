@@ -28,14 +28,14 @@ runomp: omp
 	./$^ < $(INPUT)
 
 mpi: $(PROGRAM).c
-	$(MPICC) $(MPIFLAGS) $(CFLAGS) $^ -o $@
+	$(MPICC) $(MPIFLAGS) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 runmpi: mpi
 	mpirun -n 1 ./$^ < $(INPUT)
 	mpirun -n $(MPI_N) ./$^ < $(INPUT)
 
 mpiomp: $(PROGRAM).c
-	$(MPICC) $(OPENMPFLAGS) $(MPIFLAGS) $(CFLAGS) $^ -o $@
+	$(MPICC) $(OPENMPFLAGS) $(MPIFLAGS) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 runmpiomp: mpiomp
 	mpirun -n 1 ./$^ < $(INPUT)
