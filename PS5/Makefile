@@ -11,7 +11,7 @@ LDFLAGS = -lm
 
 OPENMPFLAGS:=-DHAVE_OPENMP -fopenmp
 MPIFLAGS:=-DHAVE_MPI
-MPI_N:=5
+MPI_N:=9
 
 all: runserial runomp runmpi runmpiomp
 
@@ -31,17 +31,15 @@ mpi: $(PROGRAM).c
 	$(MPICC) $(MPIFLAGS) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 runmpi: mpi
-	mpirun -n 1 ./$^ < $(INPUT)
 	mpirun -n $(MPI_N) ./$^ < $(INPUT)
 
 mpiomp: $(PROGRAM).c
 	$(MPICC) $(OPENMPFLAGS) $(MPIFLAGS) $(CFLAGS) $(LDFLAGS) $^ -o $@
 
 runmpiomp: mpiomp
-	mpirun -n 1 ./$^ < $(INPUT)
 	mpirun -n $(MPI_N) ./$^ < $(INPUT)
 
-timing: serial omp
+timing: serial omp mpi mpiomp
 	./timing.sh
 
 clean:

@@ -51,6 +51,8 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    if (DEBUG) printf("rank: %d\n", rank);
 #endif
 
     int *start, *stop, *numThreads, amountOfRuns = 0;
@@ -127,7 +129,6 @@ int main(int argc, char **argv) {
         if (rank == (size - 1)) {
             m_stop = stop[run];
         }
-        printf("%d: %d --> %d\n", rank, m_start, m_stop);
 #endif
 
 #ifdef HAVE_OPENMP
@@ -147,7 +148,7 @@ int main(int argc, char **argv) {
                     break; // if m and n makes too big c, try the next m
                 }
                 if (!((m - n) & 0b1) || gcd(m, n) != 1) {
-                    continue; // wikipedia says: primitive iff m and n are coprime and m − n is odd
+                    continue; // wikipedia says: primitive iff m and n are coprime and m - n is odd
                 }
                 if (c <= stop[run]) {
                     local_sum += 1;
