@@ -1,11 +1,12 @@
-*.swp
 *.aux
 *.bbl
 *.blg
 *.dvi
+*.lof
 *.log
+*.lot
 *.out
+*.swp
 *.synctex.gz
 *.toc
-*.lof
-*.lot
+*.zip

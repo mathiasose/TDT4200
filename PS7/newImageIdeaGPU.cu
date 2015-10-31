@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "ppmCU.h"
 
+#define CUDA 0
+
 // Image from:
 // http://7-themes.com/6971875-funny-flowers-pictures.html
 
@@ -21,7 +23,7 @@
 //__global__ void ...GPU( ... ) { ... }
 
 typedef struct {
-    float red,green,blue;
+    float red, green, blue;
 } AccuratePixel;
 
 typedef struct {
@@ -29,37 +31,102 @@ typedef struct {
     AccuratePixel *data;
 } AccurateImage;
 
+__global__
+void ppm_to_acc_kernel(PPMPixel *in_pixels, AccuratePixel *out_pixels) {
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned int w = gridDim.x * blockDim.x;
+    unsigned int i = w * y + x;
+
+    out_pixels[i].red   = (float) in_pixels[i].red;
+    out_pixels[i].green = (float) in_pixels[i].green;
+    out_pixels[i].blue  = (float) in_pixels[i].blue;
+}
+
+__global__
+void acc_to_ppm_kernel(PPMPixel *out_pixels, AccuratePixel *in_pixels) {
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned int w = gridDim.x * blockDim.x;
+    unsigned int i = w * y + x;
+
+    out_pixels[i].red   = (unsigned char) in_pixels[i].red;
+    out_pixels[i].green = (unsigned char) in_pixels[i].green;
+    out_pixels[i].blue  = (unsigned char) in_pixels[i].blue;
+}
+
 // Convert a PPM image to a high-precision format 
 AccurateImage *convertImageToNewFormat(PPMImage *image) {
-    // Make a copy
+    unsigned int num_pixels = (image->x)*(image->y);
+    unsigned int ppm_pixels_size = num_pixels*sizeof(PPMPixel);
+    unsigned int acc_pixels_size = num_pixels*sizeof(AccuratePixel);
+
     AccurateImage *imageAccurate;
     imageAccurate = (AccurateImage *)malloc(sizeof(AccurateImage));
-    imageAccurate->data = (AccuratePixel*)malloc(image->x * image->y * sizeof(AccuratePixel));
-    for(int i = 0; i < image->x * image->y; i++) {
-        imageAccurate->data[i].red   = (float) image->data[i].red;
-        imageAccurate->data[i].green = (float) image->data[i].green;
-        imageAccurate->data[i].blue  = (float) image->data[i].blue;
-    }
+    imageAccurate->data = (AccuratePixel*)malloc(acc_pixels_size);
     imageAccurate->x = image->x;
     imageAccurate->y = image->y;
+
+    if(CUDA) {
+        dim3 blockDim(16, 16);
+        dim3 gridDim((image->x)/(blockDim.x), (image->y)/(blockDim.y));
+
+        PPMPixel* device_ppm_pixels;
+        AccuratePixel* device_acc_pixels;
+        cudaMalloc((void **)&device_ppm_pixels, ppm_pixels_size);
+        cudaMalloc((void **)&device_acc_pixels, acc_pixels_size);
+
+        cudaMemcpy(device_ppm_pixels, image->data, ppm_pixels_size, cudaMemcpyHostToDevice);
+        ppm_to_acc_kernel<<<gridDim, blockDim>>>(device_ppm_pixels, device_acc_pixels);
+        cudaMemcpy(imageAccurate->data, device_acc_pixels, acc_pixels_size, cudaMemcpyDeviceToHost);
+
+        cudaFree(device_acc_pixels);
+        cudaFree(device_ppm_pixels);
+    } else {
+        for(int i = 0; i < image->x * image->y; i++) {
+            imageAccurate->data[i].red   = (float) image->data[i].red;
+            imageAccurate->data[i].green = (float) image->data[i].green;
+            imageAccurate->data[i].blue  = (float) image->data[i].blue;
+        }
+    }
 
     return imageAccurate;
 }
 
 // Convert a high-precision format to a PPM image
 PPMImage *convertNewFormatToPPM(AccurateImage *image) {
-    // Make a copy
+    unsigned int num_pixels = (image->x)*(image->y);
+    unsigned int ppm_pixels_size = num_pixels*sizeof(PPMPixel);
+    unsigned int acc_pixels_size = num_pixels*sizeof(AccuratePixel);
+
     PPMImage *imagePPM;
     imagePPM = (PPMImage *)malloc(sizeof(PPMImage));
-    imagePPM->data = (PPMPixel*)malloc(image->x * image->y * sizeof(PPMPixel));
-    for(int i = 0; i < image->x * image->y; i++) {
-        imagePPM->data[i].red   = (unsigned char) image->data[i].red;
-        imagePPM->data[i].green = (unsigned char) image->data[i].green;
-        imagePPM->data[i].blue  = (unsigned char) image->data[i].blue;
-    }
+    imagePPM->data = (PPMPixel*)malloc(ppm_pixels_size);
     imagePPM->x = image->x;
     imagePPM->y = image->y;
 
+    if (CUDA) {
+        dim3 blockDim(16, 16);
+        dim3 gridDim(image->x/blockDim.x, image->y/blockDim.y);
+
+        PPMPixel* device_ppm_pixels;
+        AccuratePixel* device_acc_pixels;
+        cudaMalloc((void **)&device_ppm_pixels, ppm_pixels_size);
+        cudaMalloc((void **)&device_acc_pixels, acc_pixels_size);
+
+        cudaMemcpy(device_acc_pixels, image->data, acc_pixels_size, cudaMemcpyHostToDevice);
+        acc_to_ppm_kernel<<<gridDim, blockDim>>>(device_ppm_pixels, device_acc_pixels);
+        cudaMemcpy(imagePPM->data, device_ppm_pixels, ppm_pixels_size, cudaMemcpyDeviceToHost);
+
+        cudaFree(device_acc_pixels);
+        cudaFree(device_ppm_pixels);
+    } else {
+        for(int i = 0; i < image->x * image->y; i++) {
+            imagePPM->data[i].red   = (unsigned char) image->data[i].red;
+            imagePPM->data[i].green = (unsigned char) image->data[i].green;
+            imagePPM->data[i].blue  = (unsigned char) image->data[i].blue;
+        }
+    }
     return imagePPM;
 }
 
@@ -80,19 +147,15 @@ void freeImage(AccurateImage *image){
 }
 
 void performNewIdeaIteration(AccurateImage *imageOut, AccurateImage *imageIn, int size) {
-
     // Iterate over each pixel
     for(int senterX = 0; senterX < imageIn->x; senterX++) {
-
         for(int senterY = 0; senterY < imageIn->y; senterY++) {
-
             // For each pixel we compute the magic number
             float sumR = 0;
             float sumG = 0;
             float sumB = 0;
             int countIncluded = 0;
             for(int x = -size; x <= size; x++) {
-
                 for(int y = -size; y <= size; y++) {
                     int currentX = senterX + x;
                     int currentY = senterY + y;
@@ -137,8 +200,6 @@ void performNewIdeaIteration(AccurateImage *imageOut, AccurateImage *imageIn, in
 
 // Perform the final step, and save it as a ppm in imageOut
 void performNewIdeaFinalization(AccurateImage *imageInSmall, AccurateImage *imageInLarge, PPMImage *imageOut) {
-
-
     imageOut->x = imageInSmall->x;
     imageOut->y = imageInSmall->y;
 
@@ -191,9 +252,7 @@ void performNewIdeaFinalization(AccurateImage *imageInSmall, AccurateImage *imag
 }
 
 int main(int argc, char** argv) {
-
     PPMImage *image;
-
     if(argc > 1) {
         image = readPPM("flower.ppm");
     } else {
