@@ -4,22 +4,6 @@
 #include <stdio.h>
 #include "ppmCU.h"
 
-// Image from:
-// http://7-themes.com/6971875-funny-flowers-pictures.html
-
-// TODO: You must implement this
-// The handout code is much simpler than the MPI/OpenMP versions
-//__global__ void performNewIdeaIterationGPU( ... ) { ... }
-
-// TODO: You should implement this
-//__global__ void performNewIdeaFinalizationGPU( ... ) { ... }
-
-// TODO: You should implement this
-//__global__ void convertImageToNewFormatGPU( ... ) { ... }
-
-// Perhaps some extra kernels will be practical as well?
-//__global__ void ...GPU( ... ) { ... }
-
 typedef struct {
     float red, green, blue;
 } AccuratePixel;
@@ -71,47 +55,6 @@ AccurateImage *convertImageToNewFormat(PPMImage *image) {
 }
 
 
-__global__
-void acc_to_ppm_kernel(PPMPixel *out_pixels, AccuratePixel *in_pixels) {
-    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
-    unsigned int w = gridDim.x * blockDim.x;
-    unsigned int i = w * y + x;
-
-    out_pixels[i].red   = (unsigned char) in_pixels[i].red;
-    out_pixels[i].green = (unsigned char) in_pixels[i].green;
-    out_pixels[i].blue  = (unsigned char) in_pixels[i].blue;
-}
-PPMImage *convertNewFormatToPPM(AccurateImage *image) {
-    unsigned int num_pixels = (image->x)*(image->y);
-    unsigned int ppm_pixels_size = num_pixels*sizeof(PPMPixel);
-    unsigned int acc_pixels_size = num_pixels*sizeof(AccuratePixel);
-
-    PPMImage *imagePPM;
-    imagePPM = (PPMImage *)malloc(sizeof(PPMImage));
-    imagePPM->data = (PPMPixel*)malloc(ppm_pixels_size);
-    imagePPM->x = image->x;
-    imagePPM->y = image->y;
-
-    dim3 blockDim(16, 16);
-    dim3 gridDim(image->x/blockDim.x, image->y/blockDim.y);
-
-    PPMPixel* device_ppm_pixels;
-    AccuratePixel* device_acc_pixels;
-    cudaMalloc((void **)&device_ppm_pixels, ppm_pixels_size);
-    cudaMalloc((void **)&device_acc_pixels, acc_pixels_size);
-
-    cudaMemcpy(device_acc_pixels, image->data, acc_pixels_size, cudaMemcpyHostToDevice);
-    acc_to_ppm_kernel<<<gridDim, blockDim>>>(device_ppm_pixels, device_acc_pixels);
-    cudaMemcpy(imagePPM->data, device_ppm_pixels, ppm_pixels_size, cudaMemcpyDeviceToHost);
-
-    cudaFree(device_acc_pixels);
-    cudaFree(device_ppm_pixels);
-
-    return imagePPM;
-}
-
-
 AccurateImage *createEmptyImage(PPMImage *image){
     AccurateImage *imageAccurate;
     imageAccurate = (AccurateImage *)malloc(sizeof(AccurateImage));
@@ -142,11 +85,11 @@ void idea_kernel(AccuratePixel *in_pixels, AccuratePixel *out_pixels, int* size)
     float sumB = 0;
     int countIncluded = 0;
     for(int x = -(*size); x <= (*size); x++) {
+        int currentX = centerX + x;
+        if(currentX < 0 || currentX >= w) continue;
         for(int y = -(*size); y <= (*size); y++) {
-            int currentX = centerX + x;
             int currentY = centerY + y;
-
-            if(currentX < 0 || currentX >= w || currentY < 0 || currentY >= h) continue;
+            if(currentY < 0 || currentY >= h) continue;
 
             int offsetOfThePixel = w * currentY + currentX;
             sumR += in_pixels[offsetOfThePixel].red;
@@ -192,57 +135,56 @@ void performNewIdeaIteration(AccurateImage *imageOut, AccurateImage *imageIn, in
     cudaFree(device_size);
 }
 
-// Perform the final step, and save it as a ppm in imageOut
+__device__
+unsigned char rangeCheck(float value) {
+    if(value > 255.0f) {
+        return 255;
+    } else if (value > -1.0f && value < 0.0f) {
+        return 0;
+    } else if (value < -1.0f) {
+        return floorf(257.0f + value);
+    } else {
+        return floorf(value);
+    }
+}
+__global__
+void finalize_kernel(PPMPixel *out_pixels, AccuratePixel *in_1_pixels, AccuratePixel *in_2_pixels) {
+    unsigned int x = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int y = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned int w = gridDim.x * blockDim.x;
+    unsigned int i = w * y + x;
+
+    out_pixels[i].red = rangeCheck(in_1_pixels[i].red - in_2_pixels[i].red);;
+    out_pixels[i].green = rangeCheck(in_1_pixels[i].green - in_2_pixels[i].green);
+    out_pixels[i].blue = rangeCheck(in_1_pixels[i].blue - in_2_pixels[i].blue);
+}
 void performNewIdeaFinalization(AccurateImage *imageInSmall, AccurateImage *imageInLarge, PPMImage *imageOut) {
     imageOut->x = imageInSmall->x;
     imageOut->y = imageInSmall->y;
 
-    for(int i = 0; i < imageInSmall->x * imageInSmall->y; i++) {
-        float value = (imageInLarge->data[i].red - imageInSmall->data[i].red);
-        if(value > 255.0f)
-            imageOut->data[i].red = 255;
-        else if (value < -1.0f) {
-            value = 257.0f+value;
-            if(value > 255.0f)
-                imageOut->data[i].red = 255;
-            else
-                imageOut->data[i].red = floorf(value);
-        } else if (value > -1.0f && value < 0.0f) {
-            imageOut->data[i].red = 0;
-        } else {
-            imageOut->data[i].red = floorf(value);
-        }
+    unsigned int num_pixels = (imageInSmall->x)*(imageInSmall->y);
+    unsigned int ppm_pixels_size = num_pixels*sizeof(PPMPixel);
+    unsigned int acc_pixels_size = num_pixels*sizeof(AccuratePixel);
 
-        value = (imageInLarge->data[i].green - imageInSmall->data[i].green);
-        if(value > 255.0f)
-            imageOut->data[i].green = 255;
-        else if (value < -1.0f) {
-            value = 257.0f+value;
-            if(value > 255.0f)
-                imageOut->data[i].green = 255;
-            else
-                imageOut->data[i].green = floorf(value);
-        } else if (value > -1.0f && value < 0.0f) {
-            imageOut->data[i].green = 0;
-        } else {
-            imageOut->data[i].green = floorf(value);
-        }
+    dim3 blockDim(16, 16);
+    dim3 gridDim(imageInSmall->x/blockDim.x, imageInSmall->y/blockDim.y);
 
-        value = (imageInLarge->data[i].blue - imageInSmall->data[i].blue);
-        if(value > 255.0f)
-            imageOut->data[i].blue = 255;
-        else if (value < -1.0f) {
-            value = 257.0f+value;
-            if(value > 255.0f)
-                imageOut->data[i].blue = 255;
-            else
-                imageOut->data[i].blue = floorf(value);
-        } else if (value > -1.0f && value < 0.0f) {
-            imageOut->data[i].blue = 0;
-        } else {
-            imageOut->data[i].blue = floorf(value);
-        }
-    }
+    PPMPixel* device_ppm_pixels;
+    AccuratePixel* device_acc_pixels_1;
+    AccuratePixel* device_acc_pixels_2;
+    cudaMalloc((void **)&device_ppm_pixels, ppm_pixels_size);
+    cudaMalloc((void **)&device_acc_pixels_1, acc_pixels_size);
+    cudaMalloc((void **)&device_acc_pixels_2, acc_pixels_size);
+
+    cudaMemcpy(device_acc_pixels_1, imageInLarge->data, acc_pixels_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_acc_pixels_2, imageInSmall->data, acc_pixels_size, cudaMemcpyHostToDevice);
+    finalize_kernel<<<gridDim, blockDim>>>(device_ppm_pixels, device_acc_pixels_1, device_acc_pixels_2);
+    cudaMemcpy(imageOut->data, device_ppm_pixels, ppm_pixels_size, cudaMemcpyDeviceToHost);
+
+    cudaFree(device_acc_pixels_1);
+    cudaFree(device_acc_pixels_2);
+    cudaFree(device_ppm_pixels);
+
 }
 
 int main(int argc, char** argv) {
