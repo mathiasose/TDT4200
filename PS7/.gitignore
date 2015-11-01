@@ -1,4 +1,7 @@
 flower_*.ppm
+*.o
 checker
 newImageIdeaOMP
+newImageIdeaGPU
+newImageIdeaMPI
 newImageIdeaReference
