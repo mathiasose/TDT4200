@@ -280,6 +280,7 @@ int main(int argc, char** argv) {
 
         MPI_Wait(&r3, MPI_SUCCESS);
         performNewIdeaFinalization(imageMedium, imageBig, imageOut);
+        writePPM("flower_medium.ppm", imageOut);
 
         // tiny image is freed as bufferA
         freeImage(imageSmall);
@@ -287,7 +288,6 @@ int main(int argc, char** argv) {
         freeImage(imageBig);
         free(imageOut->data);
         free(imageOut);
-        writePPM("flower_medium.ppm", imageOut);
     } else {
         MPI_Send(bufferA->data, 3*pixelCount, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);
     }
